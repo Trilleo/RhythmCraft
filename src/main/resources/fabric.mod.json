@@ -20,6 +20,9 @@
 		],
 		"fabric-datagen": [
 			"net.trilleo.rhythmcraft.RhythmCraftDataGenerator"
+		],
+		"client": [
+			"net.trilleo.rhythmcraft.RhythmCraftClient"
 		]
 	},
 	"mixins": [
