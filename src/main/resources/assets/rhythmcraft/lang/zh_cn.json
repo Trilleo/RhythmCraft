@@ -4,14 +4,6 @@
   "screen.rhythmcraft.score": "得分：%d",
   "screen.rhythmcraft.combo": "连击：%d",
   "screen.rhythmcraft.final_score": "得分：%d  |  最大连击：%d",
-  "screen.rhythmcraft.max_combo": "最大连击：%d",
-  "screen.rhythmcraft.chart_maker": "节拍工艺 谱面编辑器",
-  "screen.rhythmcraft.maker.save": "保存",
-  "screen.rhythmcraft.maker.load": "读取",
-  "screen.rhythmcraft.maker.test": "测试",
-  "screen.rhythmcraft.maker.new": "新建",
-  "screen.rhythmcraft.maker.back": "✕",
   "key.rhythmcraft.open_game": "打开节奏游戏",
-  "key.rhythmcraft.open_maker": "打开谱面编辑器",
   "category.rhythmcraft.gameplay": "节拍工艺"
 }
