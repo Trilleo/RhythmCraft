@@ -1,3 +1,9 @@
 {
-  "item.rhythmcraft.rhythm_tuner": "Rhythm Tuner"
+  "item.rhythmcraft.rhythm_tuner": "Rhythm Tuner",
+  "screen.rhythmcraft.rhythm_game": "RhythmCraft",
+  "screen.rhythmcraft.score": "SCORE: %d",
+  "screen.rhythmcraft.combo": "COMBO: %d",
+  "screen.rhythmcraft.final_score": "Score: %d  |  Max Combo: %d",
+  "key.rhythmcraft.open_game": "Open Rhythm Game",
+  "category.rhythmcraft.gameplay": "RhythmCraft"
 }

@@ -1,3 +1,9 @@
 {
-  "item.rhythmcraft.rhythm_tuner": "调音器"
+  "item.rhythmcraft.rhythm_tuner": "调音器",
+  "screen.rhythmcraft.rhythm_game": "节拍工艺",
+  "screen.rhythmcraft.score": "得分：%d",
+  "screen.rhythmcraft.combo": "连击：%d",
+  "screen.rhythmcraft.final_score": "得分：%d  |  最大连击：%d",
+  "key.rhythmcraft.open_game": "打开节奏游戏",
+  "category.rhythmcraft.gameplay": "节拍工艺"
 }
