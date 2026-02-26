@@ -19,12 +19,12 @@ import java.util.List;
  *
  * <p>Supports 4, 5, or 6 key modes. Judgment follows Chunithm conventions:
  * <ul>
- *   <li>CRITICAL JUSTICE – within ±50 ms of the judgment line → 101% of note-unit value</li>
- *   <li>JUSTICE          – within ±83 ms → 100% of note-unit value; combo continues</li>
- *   <li>ATTACK           – within ±116 ms → 60% of note-unit value; combo broken</li>
- *   <li>MISS             – outside ±116 ms → 0%; combo broken</li>
+ *   <li>CRITICAL JUSTICE – within ±50 ms of the judgment line → full note-unit score</li>
+ *   <li>JUSTICE          – within ±83 ms → half note-unit score; combo continues</li>
+ *   <li>ATTACK           – within ±116 ms → 0 score; combo broken</li>
+ *   <li>MISS             – outside ±116 ms → 0 score; combo broken</li>
  * </ul>
- * Maximum score per chart = 1 010 000 (achieved when every note-unit is CRITICAL JUSTICE).
+ * Maximum score per chart = 10 100 000 (10 000 000 base + 100 000 all-CJ bonus).
  */
 @Environment(EnvType.CLIENT)
 public class RhythmGameScreen extends Screen {
@@ -227,17 +227,16 @@ public class RhythmGameScreen extends Screen {
     // ── Scoring ───────────────────────────────────────────────────────────────
 
     /**
-     * Scoring formula (max = 1 010 000):
-     * <pre>
-     *   unit  = 1 000 000 / totalNotes
-     *   score = CJ × unit×101% + J × unit×100% + A × unit×60%
-     *         = (cjCount×101 + jCount×100 + attackCount×60) × 10 000 / totalNotes
-     * </pre>
+     * Chunithm 10 100 000 formula.
+     * base  = (cjCount×2 + jCount) × 10 000 000 / (totalNotes×2)
+     * bonus = +100 000 when every note-unit is CRITICAL_JUSTICE
      */
     private int computeScore() {
         if (totalNotes <= 0) return 0;
-        long raw = (long) (cjCount * 101 + jCount * 100 + attackCount * 60) * 10_000L / totalNotes;
-        return (int) Math.min(raw, 1_010_000L);
+        long base  = (long) (cjCount * 2 + jCount) * 10_000_000L / ((long) totalNotes * 2);
+        boolean allCJ = (cjCount == totalNotes && jCount == 0
+                && attackCount == 0 && missCount == 0);
+        return (int) Math.min(base + (allCJ ? 100_000L : 0L), 10_100_000L);
     }
 
     private static Judgment judgeByDiff(long diffMs) {
@@ -259,15 +258,15 @@ public class RhythmGameScreen extends Screen {
     }
 
     private static String gradeFor(int score) {
-        if (score >= 1_005_000) return "SSS+";
-        if (score >= 1_000_000) return "SSS";
-        if (score >=   990_000) return "SS";
-        if (score >=   975_000) return "S";
-        if (score >=   950_000) return "AAA";
-        if (score >=   900_000) return "AA";
-        if (score >=   800_000) return "A";
-        if (score >=   700_000) return "B";
-        if (score >=   500_000) return "C";
+        if (score >= 10_050_000) return "SSS+";
+        if (score >= 10_000_000) return "SSS";
+        if (score >= 9_900_000)  return "SS";
+        if (score >= 9_750_000)  return "S";
+        if (score >= 9_500_000)  return "AAA";
+        if (score >= 9_000_000)  return "AA";
+        if (score >= 8_000_000)  return "A";
+        if (score >= 7_000_000)  return "B";
+        if (score >= 5_000_000)  return "C";
         return "D";
     }
 
@@ -452,8 +451,8 @@ public class RhythmGameScreen extends Screen {
                     recordJudgment(note.lane, Judgment.MISS);
                     // For a HOLD whose head was never pressed, the tail is also implicitly
                     // missed.  We do NOT call recordJudgment a second time (that would cause
-                    // a duplicate flash); instead increment missCount directly for the
-                    // result-screen breakdown.
+                    // a duplicate flash); instead we increment missCount directly so the
+                    // result screen and allCJ check remain accurate.
                     if (note.isHold()) missCount++;
                 }
             }

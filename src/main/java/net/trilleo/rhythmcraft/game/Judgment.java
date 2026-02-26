@@ -5,20 +5,19 @@ package net.trilleo.rhythmcraft.game;
  *
  * <p>Timing windows (applies to both press and HOLD tail release):
  * <ul>
- *   <li>CRITICAL_JUSTICE – within ±50 ms → 101% of note-unit value</li>
- *   <li>JUSTICE          – within ±83 ms  → 100% of note-unit value; combo continues</li>
- *   <li>ATTACK           – within ±116 ms → 60%  of note-unit value; combo broken</li>
- *   <li>MISS             – outside ±116 ms → 0%;  combo broken</li>
+ *   <li>CRITICAL_JUSTICE – within ±50 ms of the judgment line</li>
+ *   <li>JUSTICE          – within ±83 ms</li>
+ *   <li>ATTACK           – within ±116 ms</li>
+ *   <li>MISS             – outside ±116 ms (or never pressed)</li>
  * </ul>
- * Maximum achievable score = 1 010 000 (every note-unit is CRITICAL_JUSTICE).
  */
 public enum Judgment {
-    /** 101% of note-unit value. Combo continues. */
+    /** Perfect timing. Full note-unit score. Combo continues. */
     CRITICAL_JUSTICE,
-    /** 100% of note-unit value. Combo continues. */
+    /** Good timing. Half note-unit score. Combo continues. */
     JUSTICE,
-    /** 60% of note-unit value. Combo broken. */
+    /** Borderline hit. No score. Combo broken. */
     ATTACK,
-    /** 0% score. Combo broken. */
+    /** Not hit in time. No score. Combo broken. */
     MISS
 }
