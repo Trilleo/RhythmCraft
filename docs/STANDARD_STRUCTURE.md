@@ -1,0 +1,1 @@
+# RhythmCraft - Standard Structure
