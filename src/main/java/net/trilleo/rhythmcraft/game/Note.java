@@ -11,6 +11,8 @@ public class Note {
     private boolean hit = false;
     /** True while a HOLD note's head has been pressed and the tail has not yet been released/completed. */
     private boolean holdActive = false;
+    /** Set once the note (or its head, for HOLDs) has been judged. */
+    private Judgment judgment = null;
 
     public Note(int lane, NoteType type, long hitTime, long duration) {
         this.lane = lane;
@@ -41,5 +43,13 @@ public class Note {
 
     public void setHoldActive(boolean holdActive) {
         this.holdActive = holdActive;
+    }
+
+    public Judgment getJudgment() {
+        return judgment;
+    }
+
+    public void setJudgment(Judgment judgment) {
+        this.judgment = judgment;
     }
 }

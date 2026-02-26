@@ -4,6 +4,14 @@
   "screen.rhythmcraft.score": "SCORE: %d",
   "screen.rhythmcraft.combo": "COMBO: %d",
   "screen.rhythmcraft.final_score": "Score: %d  |  Max Combo: %d",
+  "screen.rhythmcraft.max_combo": "Max Combo: %d",
+  "screen.rhythmcraft.chart_maker": "RhythmCraft Chart Maker",
+  "screen.rhythmcraft.maker.save": "Save",
+  "screen.rhythmcraft.maker.load": "Load",
+  "screen.rhythmcraft.maker.test": "Test",
+  "screen.rhythmcraft.maker.new": "New",
+  "screen.rhythmcraft.maker.back": "✕",
   "key.rhythmcraft.open_game": "Open Rhythm Game",
+  "key.rhythmcraft.open_maker": "Open Chart Maker",
   "category.rhythmcraft.gameplay": "RhythmCraft"
 }

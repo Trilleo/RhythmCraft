@@ -5,6 +5,8 @@ import net.fabricmc.api.Environment;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
+import net.trilleo.rhythmcraft.game.Chart;
+import net.trilleo.rhythmcraft.game.Judgment;
 import net.trilleo.rhythmcraft.game.Note;
 import net.trilleo.rhythmcraft.game.NoteType;
 import org.lwjgl.glfw.GLFW;
@@ -15,100 +17,133 @@ import java.util.List;
 /**
  * The main rhythm game stage screen.
  *
- * <p>Supports 4, 5, or 6 key modes. Notes of type {@link NoteType#TAP} appear as thin
- * horizontal bars; {@link NoteType#HOLD} notes have a head bar, a connecting body, and a
- * tail bar that must all be held through to earn full score.</p>
+ * <p>Supports 4, 5, or 6 key modes. Judgment follows Chunithm conventions:
+ * <ul>
+ *   <li>CRITICAL JUSTICE – within ±50 ms of the judgment line → full note-unit score</li>
+ *   <li>JUSTICE          – within ±83 ms → half note-unit score; combo continues</li>
+ *   <li>ATTACK           – within ±116 ms → 0 score; combo broken</li>
+ *   <li>MISS             – outside ±116 ms → 0 score; combo broken</li>
+ * </ul>
+ * Maximum score per chart = 10 100 000 (10 000 000 base + 100 000 all-CJ bonus).
  */
 @Environment(EnvType.CLIENT)
 public class RhythmGameScreen extends Screen {
 
-    // ── Layout constants ────────────────────────────────────────────────────
+    // ── Timing windows (ms) ───────────────────────────────────────────────────
 
-    /** Pixel width of each lane. */
-    private static final int LANE_WIDTH = 80;
-    /** Distance from the bottom of the screen to the judgment line. */
+    private static final int WINDOW_CJ  = 50;
+    private static final int WINDOW_J   = 83;
+    private static final int WINDOW_ATK = 116;
+
+    // ── Layout constants ──────────────────────────────────────────────────────
+
+    private static final int LANE_WIDTH      = 80;
     private static final int JUDGMENT_OFFSET = 90;
-    /** Height in pixels of the key-indicator box below the judgment line. */
-    private static final int KEY_BOX_HEIGHT = 34;
-    /** Milliseconds a note takes to travel from the top of the play area to the judgment line. */
-    private static final int NOTE_TRAVEL_MS = 2000;
-    /** Half-window (ms) around the judgment line within which a hit is accepted. */
-    private static final int HIT_WINDOW_MS = 150;
-    /** Width of the thin "border" line drawn between lanes. */
-    private static final int LANE_BORDER = 1;
+    private static final int KEY_BOX_HEIGHT  = 34;
+    private static final int NOTE_TRAVEL_MS  = 2000;
+    private static final int LANE_BORDER     = 1;
 
-    // ── Colors ───────────────────────────────────────────────────────────────
+    // ── Colors ────────────────────────────────────────────────────────────────
 
-    private static final int COLOR_BG              = 0xFF0D1117;
-    private static final int COLOR_LANE_EVEN       = 0xFF161B22;
-    private static final int COLOR_LANE_ODD        = 0xFF21262D;
-    private static final int COLOR_LANE_BORDER     = 0xFF30363D;
-    private static final int COLOR_JUDGMENT_LINE   = 0xFFF78166;
-    private static final int COLOR_TAP_NOTE        = 0xFFE6EDF3;
-    private static final int COLOR_TAP_ACCENT      = 0xFFFFD700;
-    private static final int COLOR_HOLD_HEAD       = 0xFF4ECDC4;
-    private static final int COLOR_HOLD_BODY       = 0x884ECDC4;
-    private static final int COLOR_HOLD_ACTIVE     = 0xFF26C6DA;
-    private static final int COLOR_HOLD_BODY_ACTIVE= 0xCC26C6DA;
-    private static final int COLOR_KEY_IDLE        = 0xFF2D333B;
-    private static final int COLOR_KEY_PRESSED     = 0xFFF78166;
-    private static final int COLOR_MISS_FLASH      = 0x44FF0000;
+    private static final int COLOR_BG               = 0xFF0D1117;
+    private static final int COLOR_LANE_EVEN        = 0xFF161B22;
+    private static final int COLOR_LANE_ODD         = 0xFF21262D;
+    private static final int COLOR_LANE_BORDER      = 0xFF30363D;
+    private static final int COLOR_JUDGMENT_LINE    = 0xFFF78166;
+    private static final int COLOR_TAP_NOTE         = 0xFFE6EDF3;
+    private static final int COLOR_TAP_ACCENT       = 0xFFFFD700;
+    private static final int COLOR_HOLD_HEAD        = 0xFF4ECDC4;
+    private static final int COLOR_HOLD_BODY        = 0x884ECDC4;
+    private static final int COLOR_HOLD_ACTIVE      = 0xFF26C6DA;
+    private static final int COLOR_HOLD_BODY_ACTIVE = 0xCC26C6DA;
+    private static final int COLOR_KEY_IDLE         = 0xFF2D333B;
+    private static final int COLOR_KEY_PRESSED      = 0xFFF78166;
+    private static final int COLOR_MISS_FLASH       = 0x44FF0000;
 
-    // ── Key bindings (GLFW codes) per lane count ──────────────────────────────
+    private static final int COLOR_J_CJ   = 0xFF00FFFF;
+    private static final int COLOR_J_J    = 0xFFFFCC00;
+    private static final int COLOR_J_ATK  = 0xFFFF8800;
+    private static final int COLOR_J_MISS = 0xFFFF4444;
 
-    /** Key codes for 4-key mode: D F J K */
+    // ── Key bindings per lane count ────────────────────────────────────────────
+
     private static final int[] KEYS_4 = {
             GLFW.GLFW_KEY_D, GLFW.GLFW_KEY_F, GLFW.GLFW_KEY_J, GLFW.GLFW_KEY_K
     };
-    /** Key codes for 5-key mode: D F Space J K */
     private static final int[] KEYS_5 = {
             GLFW.GLFW_KEY_D, GLFW.GLFW_KEY_F, GLFW.GLFW_KEY_SPACE,
             GLFW.GLFW_KEY_J, GLFW.GLFW_KEY_K
     };
-    /** Key codes for 6-key mode: S D F J K L */
     private static final int[] KEYS_6 = {
             GLFW.GLFW_KEY_S, GLFW.GLFW_KEY_D, GLFW.GLFW_KEY_F,
             GLFW.GLFW_KEY_J, GLFW.GLFW_KEY_K, GLFW.GLFW_KEY_L
     };
-
     private static final String[][] KEY_NAMES = {
             {"D", "F", "J", "K"},
             {"D", "F", "SPC", "J", "K"},
             {"S", "D", "F", "J", "K", "L"}
     };
 
-    // ── Game state ────────────────────────────────────────────────────────────
+    // ── Chart / game state ────────────────────────────────────────────────────
 
-    private int laneCount;         // 4, 5 or 6
-    private int[] laneKeys;        // current active key codes
-    private String[] laneKeyNames; // display labels
+    /** Optional chart loaded from a file; null = use built-in sample. */
+    private final Chart  chart;
+    /** Optional parent screen to return to when closed (e.g. the chart maker). */
+    private final Screen parent;
 
-    private final List<Note> notes = new ArrayList<>();
-    private final boolean[] lanePressed  = new boolean[6];
-    /** Timestamp of the last hit or miss in each lane, for brief visual feedback. */
-    private final long[]    hitEffectTime  = new long[6];
-    private final boolean[] hitEffectMiss  = new boolean[6];
+    private int      laneCount;
+    private int[]    laneKeys;
+    private String[] laneKeyNames;
 
-    private int  score;
-    private int  combo;
-    private int  maxCombo;
-    private long gameStartTime;
+    private final List<Note>  notes             = new ArrayList<>();
+    private final boolean[]   lanePressed       = new boolean[6];
+    private final long[]      hitEffectTime     = new long[6];
+    /** Per-lane last judgment for the flash display; null = no active flash. */
+    private final Judgment[]  hitEffectJudgment = new Judgment[6];
+
+    // Chunithm scoring accumulators
+    private int  totalNotes;   // note-units (TAP=1, HOLD head+tail=2)
+    private int  cjCount;
+    private int  jCount;
+    private int  attackCount;
+    private int  missCount;
+
+    private int     combo;
+    private int     maxCombo;
+    private long    gameStartTime;
     private boolean gameStarted;
-    /** True once every note has been judged. */
     private boolean gameOver;
 
-    // ── Constructors ─────────────────────────────────────────────────────────
+    // ── Constructors ──────────────────────────────────────────────────────────
 
+    /** Opens the demo stage (sample notes, no parent). */
     public RhythmGameScreen() {
-        this(4);
+        this(null, null, 4);
     }
 
+    /** Opens the demo stage with a specific key count. */
     public RhythmGameScreen(int laneCount) {
+        this(null, null, laneCount);
+    }
+
+    /** Opens the stage with a chart (loaded from the chart maker, no parent). */
+    public RhythmGameScreen(Chart chart) {
+        this(chart, null, chart != null ? chart.keyCount : 4);
+    }
+
+    /** Opens the stage with a chart and a parent screen to return to when closed. */
+    public RhythmGameScreen(Chart chart, Screen parent) {
+        this(chart, parent, chart != null ? chart.keyCount : 4);
+    }
+
+    private RhythmGameScreen(Chart chart, Screen parent, int laneCount) {
         super(Text.translatable("screen.rhythmcraft.rhythm_game"));
+        this.chart  = chart;
+        this.parent = parent;
         setLaneCount(laneCount);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Lane helpers ──────────────────────────────────────────────────────────
 
     private void setLaneCount(int count) {
         this.laneCount = count;
@@ -119,10 +154,31 @@ public class RhythmGameScreen extends Screen {
         }
     }
 
-    private void buildSampleNotes() {
+    // ── Screen lifecycle ──────────────────────────────────────────────────────
+
+    @Override
+    protected void init() {
+        super.init();
+
         notes.clear();
-        // A short demonstration chart that works for any supported lane count.
-        // All lane indices are clamped to laneCount-1 automatically in rendering.
+        if (chart != null && !chart.notes.isEmpty()) {
+            setLaneCount(chart.keyCount);
+            notes.addAll(chart.toNotes());
+        } else {
+            buildSampleNotes();
+        }
+        totalNotes = computeTotalNotes();
+
+        cjCount = jCount = attackCount = missCount = 0;
+        combo = maxCombo = 0;
+        for (int i = 0; i < 6; i++) hitEffectJudgment[i] = null;
+
+        gameOver      = false;
+        gameStartTime = System.currentTimeMillis();
+        gameStarted   = true;
+    }
+
+    private void buildSampleNotes() {
         int max = laneCount - 1;
         int mid = laneCount / 2;
 
@@ -140,7 +196,7 @@ public class RhythmGameScreen extends Screen {
         addNote(max, NoteType.TAP,  5250, 0);
         addNote(0,   NoteType.TAP,  5500, 0);
         if (laneCount >= 5) {
-            addNote(1,         NoteType.TAP,  5750, 0);
+            addNote(1,             NoteType.TAP, 5750, 0);
             addNote(laneCount - 2, NoteType.TAP, 5750, 0);
         }
         addNote(0,   NoteType.HOLD, 6000, 1000);
@@ -156,18 +212,62 @@ public class RhythmGameScreen extends Screen {
         notes.add(new Note(lane, type, hitTime, duration));
     }
 
-    // ── Screen lifecycle ──────────────────────────────────────────────────────
+    /** Counts total scored note-units: TAP = 1, HOLD = 2 (head + tail). */
+    private int computeTotalNotes() {
+        int n = 0;
+        for (Note note : notes) {
+            if (note.lane < laneCount) {
+                n++;
+                if (note.isHold()) n++;
+            }
+        }
+        return n; // 0 is handled by computeScore()'s guard
+    }
 
-    @Override
-    protected void init() {
-        super.init();
-        buildSampleNotes();
-        score = 0;
-        combo = 0;
-        maxCombo = 0;
-        gameOver = false;
-        gameStartTime = System.currentTimeMillis();
-        gameStarted = true;
+    // ── Scoring ───────────────────────────────────────────────────────────────
+
+    /**
+     * Chunithm 10 100 000 formula.
+     * base  = (cjCount×2 + jCount) × 10 000 000 / (totalNotes×2)
+     * bonus = +100 000 when every note-unit is CRITICAL_JUSTICE
+     */
+    private int computeScore() {
+        if (totalNotes <= 0) return 0;
+        long base  = (long) (cjCount * 2 + jCount) * 10_000_000L / ((long) totalNotes * 2);
+        boolean allCJ = (cjCount == totalNotes && jCount == 0
+                && attackCount == 0 && missCount == 0);
+        return (int) Math.min(base + (allCJ ? 100_000L : 0L), 10_100_000L);
+    }
+
+    private static Judgment judgeByDiff(long diffMs) {
+        if (diffMs <= WINDOW_CJ)  return Judgment.CRITICAL_JUSTICE;
+        if (diffMs <= WINDOW_J)   return Judgment.JUSTICE;
+        if (diffMs <= WINDOW_ATK) return Judgment.ATTACK;
+        return Judgment.MISS;
+    }
+
+    private void recordJudgment(int lane, Judgment j) {
+        switch (j) {
+            case CRITICAL_JUSTICE -> { cjCount++;     combo++; if (combo > maxCombo) maxCombo = combo; }
+            case JUSTICE          -> { jCount++;      combo++; if (combo > maxCombo) maxCombo = combo; }
+            case ATTACK           -> { attackCount++; combo = 0; }
+            case MISS             -> { missCount++;   combo = 0; }
+        }
+        hitEffectJudgment[lane] = j;
+        hitEffectTime[lane]     = System.currentTimeMillis();
+    }
+
+    private static String gradeFor(int score) {
+        if (score >= 10_050_000) return "SSS+";
+        if (score >= 10_000_000) return "SSS";
+        if (score >= 9_900_000)  return "SS";
+        if (score >= 9_750_000)  return "S";
+        if (score >= 9_500_000)  return "AAA";
+        if (score >= 9_000_000)  return "AA";
+        if (score >= 8_000_000)  return "A";
+        if (score >= 7_000_000)  return "B";
+        if (score >= 5_000_000)  return "C";
+        return "D";
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────
@@ -176,56 +276,43 @@ public class RhythmGameScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         long elapsed = gameStarted ? System.currentTimeMillis() - gameStartTime : 0L;
 
-        int playW    = laneCount * LANE_WIDTH;
-        int playX    = (this.width - playW) / 2;
-        int judgeY   = this.height - JUDGMENT_OFFSET;
+        int playW  = laneCount * LANE_WIDTH;
+        int playX  = (this.width - playW) / 2;
+        int judgeY = this.height - JUDGMENT_OFFSET;
 
-        // Background
         context.fill(0, 0, this.width, this.height, COLOR_BG);
 
-        // Lanes
         for (int i = 0; i < laneCount; i++) {
             int lx = playX + i * LANE_WIDTH;
             context.fill(lx, 0, lx + LANE_WIDTH, this.height,
                     (i % 2 == 0) ? COLOR_LANE_EVEN : COLOR_LANE_ODD);
-            // right border
             context.fill(lx + LANE_WIDTH - LANE_BORDER, 0,
                     lx + LANE_WIDTH, this.height, COLOR_LANE_BORDER);
         }
-        // left border of first lane
         context.fill(playX, 0, playX + LANE_BORDER, this.height, COLOR_LANE_BORDER);
 
-        // Miss-flash overlay per lane
+        // Attack / Miss lane flash
         long now = System.currentTimeMillis();
         for (int i = 0; i < laneCount; i++) {
-            if (hitEffectMiss[i] && now - hitEffectTime[i] < 200) {
+            Judgment j = hitEffectJudgment[i];
+            if (j != null && (j == Judgment.ATTACK || j == Judgment.MISS)
+                    && now - hitEffectTime[i] < 200) {
                 int lx = playX + i * LANE_WIDTH;
                 context.fill(lx, 0, lx + LANE_WIDTH, judgeY, COLOR_MISS_FLASH);
             }
         }
 
-        // Notes
         for (Note note : notes) {
-            if (note.lane >= laneCount) continue;
-            renderNote(context, note, elapsed, playX, judgeY);
+            if (note.lane < laneCount) renderNote(context, note, elapsed, playX, judgeY);
         }
 
-        // Judgment line
         context.fill(playX, judgeY - 2, playX + playW, judgeY + 2, COLOR_JUDGMENT_LINE);
-
-        // Key-indicator boxes
         renderKeyBoxes(context, playX, judgeY);
+        renderHud(context, playX, playW);
 
-        // HUD – score, combo, key-count toggle hint
-        renderHud(context, playX, playW, elapsed);
-
-        // Game-over overlay
-        if (gameOver) {
-            renderGameOver(context);
-        }
-
-        // Auto-judge overdue notes
         autoJudge(elapsed);
+
+        if (gameOver) renderGameOver(context);
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -235,7 +322,6 @@ public class RhythmGameScreen extends Screen {
         if (note.isHit() && !note.isHoldActive()) return;
 
         long timeToHead = note.hitTime - elapsed;
-        // Skip notes that are far in the future or long gone
         if (timeToHead > NOTE_TRAVEL_MS + 500) return;
 
         int noteW = LANE_WIDTH - 6;
@@ -243,34 +329,26 @@ public class RhythmGameScreen extends Screen {
         int headY = judgeY - (int) (timeToHead * judgeY / NOTE_TRAVEL_MS);
 
         if (note.isTap()) {
-            if (timeToHead < -HIT_WINDOW_MS * 3) return;
-            // Accent stripe
+            if (timeToHead < -WINDOW_ATK * 3) return;
             ctx.fill(noteX, headY - 10, noteX + noteW, headY - 6, COLOR_TAP_ACCENT);
-            // Main bar
-            ctx.fill(noteX, headY - 6, noteX + noteW, headY + 4, COLOR_TAP_NOTE);
+            ctx.fill(noteX, headY - 6,  noteX + noteW, headY + 4, COLOR_TAP_NOTE);
         } else {
-            // HOLD note
             long timeToTail = (note.hitTime + note.duration) - elapsed;
-            if (timeToHead < -HIT_WINDOW_MS * 3 && !note.isHoldActive()) return;
+            if (timeToHead < -WINDOW_ATK * 3 && !note.isHoldActive()) return;
 
-            int tailY = judgeY - (int) (timeToTail * judgeY / NOTE_TRAVEL_MS);
+            int tailY    = judgeY - (int) (timeToTail * judgeY / NOTE_TRAVEL_MS);
             boolean active = note.isHoldActive();
             int bodyColor = active ? COLOR_HOLD_BODY_ACTIVE : COLOR_HOLD_BODY;
             int capColor  = active ? COLOR_HOLD_ACTIVE      : COLOR_HOLD_HEAD;
 
-            // When held, clamp body top to avoid drawing above top of screen
-            int bodyTop  = Math.max(0, tailY);
-            int bodyBot  = active ? judgeY : headY;  // while held, body extends to judgment
+            int bodyTop = Math.max(0, tailY);
+            int bodyBot = active ? judgeY : headY;
             if (bodyTop < bodyBot) {
                 ctx.fill(noteX + noteW / 4, bodyTop, noteX + 3 * noteW / 4, bodyBot, bodyColor);
             }
-
-            // Tail cap (only while tail is still above judgment)
             if (tailY < judgeY) {
                 ctx.fill(noteX, tailY - 5, noteX + noteW, tailY + 5, capColor);
             }
-
-            // Head cap (only before head hits judgment, or while not yet pressed)
             if (!active && headY <= judgeY + 20) {
                 ctx.fill(noteX, headY - 6, noteX + noteW, headY + 4, capColor);
             }
@@ -279,107 +357,135 @@ public class RhythmGameScreen extends Screen {
 
     private void renderKeyBoxes(DrawContext ctx, int playX, int judgeY) {
         int boxY = judgeY + 6;
+        long now = System.currentTimeMillis();
         for (int i = 0; i < laneCount; i++) {
             int lx = playX + i * LANE_WIDTH;
-            boolean pressed = lanePressed[i];
-            int bg = pressed ? COLOR_KEY_PRESSED : COLOR_KEY_IDLE;
+            int bg = lanePressed[i] ? COLOR_KEY_PRESSED : COLOR_KEY_IDLE;
             ctx.fill(lx + 4, boxY, lx + LANE_WIDTH - 4, boxY + KEY_BOX_HEIGHT, bg);
             ctx.drawCenteredTextWithShadow(this.textRenderer, laneKeyNames[i],
                     lx + LANE_WIDTH / 2, boxY + (KEY_BOX_HEIGHT - 9) / 2, 0xFFFFFFFF);
+
+            Judgment j = hitEffectJudgment[i];
+            if (j != null && now - hitEffectTime[i] < 600) {
+                String jText = switch (j) {
+                    case CRITICAL_JUSTICE -> "CJ";
+                    case JUSTICE          -> "J";
+                    case ATTACK           -> "ATK";
+                    case MISS             -> "MISS";
+                };
+                int jColor = switch (j) {
+                    case CRITICAL_JUSTICE -> COLOR_J_CJ;
+                    case JUSTICE          -> COLOR_J_J;
+                    case ATTACK           -> COLOR_J_ATK;
+                    case MISS             -> COLOR_J_MISS;
+                };
+                ctx.drawCenteredTextWithShadow(this.textRenderer, jText,
+                        lx + LANE_WIDTH / 2, boxY - 14, jColor);
+            }
         }
     }
 
-    private void renderHud(DrawContext ctx, int playX, int playW, long elapsed) {
-        // Title
+    private void renderHud(DrawContext ctx, int playX, int playW) {
         ctx.drawCenteredTextWithShadow(this.textRenderer, this.getTitle(),
                 this.width / 2, 6, 0xFFE6EDF3);
 
-        // Score
         ctx.drawTextWithShadow(this.textRenderer,
-                Text.translatable("screen.rhythmcraft.score", score),
+                Text.translatable("screen.rhythmcraft.score", computeScore()),
                 playX, 20, 0xFFE6EDF3);
 
-        // Combo
         if (combo > 1) {
             ctx.drawTextWithShadow(this.textRenderer,
                     Text.translatable("screen.rhythmcraft.combo", combo),
                     playX, 32, 0xFFFFD700);
         }
 
-        // Mode hint (bottom-right of play area)
-        String modeHint = laneCount + "K  [Tab: cycle mode]";
+        String modeHint = laneCount + "K  [Tab: " + (chart == null ? "cycle mode" : "retry") + "]";
         int hintX = playX + playW - this.textRenderer.getWidth(modeHint);
         ctx.drawTextWithShadow(this.textRenderer, modeHint,
                 hintX, this.height - 12, 0xFF6E7681);
     }
 
     private void renderGameOver(DrawContext ctx) {
-        String line1 = "── CLEAR ──";
-        Text line2 = Text.translatable("screen.rhythmcraft.final_score", score, maxCombo);
-        String line3 = "[Esc] to exit   [Tab] to restart";
+        int finalScore = computeScore();
+        String grade   = gradeFor(finalScore);
         int cx = this.width / 2;
-        int cy = this.height / 2 - 16;
-        ctx.fill(cx - 130, cy - 8, cx + 130, cy + 44, 0xCC000000);
-        ctx.drawCenteredTextWithShadow(this.textRenderer, line1, cx, cy,      0xFFFFD700);
-        ctx.drawCenteredTextWithShadow(this.textRenderer, line2, cx, cy + 14, 0xFFE6EDF3);
-        ctx.drawCenteredTextWithShadow(this.textRenderer, line3, cx, cy + 28, 0xFF8B949E);
+        int cy = this.height / 2 - 40;
+
+        ctx.fill(cx - 150, cy - 8, cx + 150, cy + 78, 0xCC000000);
+
+        ctx.drawCenteredTextWithShadow(this.textRenderer, "── CLEAR ──",
+                cx, cy,      0xFFFFD700);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, grade,
+                cx, cy + 12, 0xFFFFD700);
+        ctx.drawCenteredTextWithShadow(this.textRenderer,
+                Text.translatable("screen.rhythmcraft.score", finalScore),
+                cx, cy + 26, 0xFFE6EDF3);
+
+        String breakdown = String.format("CJ:%d  J:%d  ATK:%d  MISS:%d",
+                cjCount, jCount, attackCount, missCount);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, breakdown,
+                cx, cy + 40, 0xFF8B949E);
+
+        ctx.drawCenteredTextWithShadow(this.textRenderer,
+                Text.translatable("screen.rhythmcraft.max_combo", maxCombo),
+                cx, cy + 52, 0xFFE6EDF3);
+
+        String hint = chart == null
+                ? "[Tab] Retry / cycle mode   [Esc] Exit"
+                : "[Tab] Retry   [Esc] Exit";
+        ctx.drawCenteredTextWithShadow(this.textRenderer, hint,
+                cx, cy + 66, 0xFF6E7681);
     }
 
     // ── Game logic ────────────────────────────────────────────────────────────
 
-    /** Called every frame; judges notes that the player is too late to hit or complete. */
     private void autoJudge(long elapsed) {
         boolean allDone = true;
         for (Note note : notes) {
             if (note.lane >= laneCount) continue;
 
             if (!note.isHit() && !note.isHoldActive()) {
-                long timeToHead = note.hitTime - elapsed;
-                if (timeToHead < -HIT_WINDOW_MS * 2) {
-                    // Miss
+                if (note.hitTime - elapsed < -WINDOW_ATK) {
                     note.setHit(true);
-                    combo = 0;
-                    hitEffectTime[note.lane] = System.currentTimeMillis();
-                    hitEffectMiss[note.lane] = true;
+                    note.setJudgment(Judgment.MISS);
+                    recordJudgment(note.lane, Judgment.MISS);
+                    // For a HOLD whose head was never pressed, the tail is also implicitly
+                    // missed.  We do NOT call recordJudgment a second time (that would cause
+                    // a duplicate flash); instead we increment missCount directly so the
+                    // result screen and allCJ check remain accurate.
+                    if (note.isHold()) missCount++;
                 }
             }
 
-            // Auto-complete an active hold whose tail has passed the hit window
+            // Auto-complete an active hold whose tail has passed the window → CJ tail
             if (note.isHold() && note.isHoldActive()) {
                 long tailTime = note.hitTime + note.duration;
-                if (elapsed > tailTime + HIT_WINDOW_MS) {
+                if (elapsed > tailTime + WINDOW_ATK) {
                     note.setHoldActive(false);
                     note.setHit(true);
-                    addScore(100); // tail auto-completed; head already scored 50
+                    recordJudgment(note.lane, Judgment.CRITICAL_JUSTICE);
                 }
             }
 
             if (!note.isHit() && !note.isHoldActive()) allDone = false;
         }
-        if (!gameOver && allDone && !notes.isEmpty()) {
-            gameOver = true;
-        }
-    }
-
-    private void addScore(int base) {
-        score += base;
-        combo++;
-        if (combo > maxCombo) maxCombo = combo;
+        if (!gameOver && allDone && !notes.isEmpty()) gameOver = true;
     }
 
     // ── Input handling ────────────────────────────────────────────────────────
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Cycle key count / restart with Tab
         if (keyCode == GLFW.GLFW_KEY_TAB) {
-            int next = laneCount == 6 ? 4 : laneCount + 1; // 4 → 5 → 6 → 4
-            setLaneCount(next);
+            if (chart == null) {
+                int next = laneCount == 6 ? 4 : laneCount + 1;
+                setLaneCount(next);
+            }
             init();
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            this.close();
+            close();
             return true;
         }
         for (int i = 0; i < laneCount; i++) {
@@ -404,39 +510,32 @@ public class RhythmGameScreen extends Screen {
         return super.keyReleased(keyCode, scanCode, modifiers);
     }
 
-    /** Called when a lane key is first pressed. Scores TAP notes or starts HOLD notes. */
     private void tryPressLane(int lane) {
         if (!gameStarted || gameOver) return;
         long elapsed = System.currentTimeMillis() - gameStartTime;
 
-        Note best = null;
+        Note best     = null;
         long bestDiff = Long.MAX_VALUE;
         for (Note note : notes) {
             if (note.isHit() || note.isHoldActive() || note.lane != lane) continue;
             long diff = Math.abs(note.hitTime - elapsed);
-            if (diff <= HIT_WINDOW_MS && diff < bestDiff) {
+            if (diff <= WINDOW_ATK && diff < bestDiff) {
                 bestDiff = diff;
-                best = note;
+                best     = note;
             }
         }
         if (best == null) return;
 
+        Judgment j = judgeByDiff(bestDiff);
+        best.setJudgment(j);
         if (best.isTap()) {
             best.setHit(true);
-            int pts = 100 + (int) (50 * (1.0 - (double) bestDiff / HIT_WINDOW_MS));
-            addScore(pts);
-            hitEffectTime[lane] = System.currentTimeMillis();
-            hitEffectMiss[lane] = false;
         } else {
-            // HOLD: score the head press (partial); tail press adds the remainder
-            best.setHoldActive(true);
-            addScore(50);
-            hitEffectTime[lane] = System.currentTimeMillis();
-            hitEffectMiss[lane] = false;
+            best.setHoldActive(true); // HOLD head — tail judged on release
         }
+        recordJudgment(lane, j);
     }
 
-    /** Called when a lane key is released. Finalises active HOLD notes for that lane. */
     private void tryReleaseLane(int lane) {
         if (!gameStarted) return;
         long elapsed = System.currentTimeMillis() - gameStartTime;
@@ -445,21 +544,31 @@ public class RhythmGameScreen extends Screen {
             if (!note.isHold() || !note.isHoldActive() || note.lane != lane) continue;
             note.setHoldActive(false);
             note.setHit(true);
+
             long tailTime = note.hitTime + note.duration;
-            long earlyMs  = Math.max(0, tailTime - elapsed);
-            if (earlyMs <= HIT_WINDOW_MS) {
-                // Released on time or late — full tail score
-                addScore(100);
+            long earlyMs  = tailTime - elapsed; // positive = released before tail
+            long diff     = Math.abs(tailTime - elapsed);
+            Judgment tailJ;
+            if (earlyMs > WINDOW_ATK) {
+                tailJ = Judgment.MISS;   // released far too early
+            } else if (earlyMs > 0) {
+                // Released early but within the hit window: cap at JUSTICE
+                tailJ = diff <= WINDOW_J ? Judgment.JUSTICE : Judgment.ATTACK;
             } else {
-                // Released early — partial score, break combo
-                score += 40;
-                combo = 0;
+                // Released on time or slightly late
+                tailJ = judgeByDiff(diff);
             }
-            break; // only one hold active per lane
+            recordJudgment(lane, tailJ);
+            break;
         }
     }
 
     // ── Screen behaviour ──────────────────────────────────────────────────────
+
+    @Override
+    public void close() {
+        if (this.client != null) this.client.setScreen(parent);
+    }
 
     @Override
     public boolean shouldPause() {
